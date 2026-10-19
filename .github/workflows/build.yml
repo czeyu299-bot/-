@@ -17,17 +17,25 @@ jobs:
         with:
           flutter-version: '3.24.0'
           channel: 'stable'
+          
       - name: Create Flutter Skeleton
         run: flutter create --org com.example --project-name factory_shift .
+        
       - name: Restore Custom Files
         run: |
           git checkout -- pubspec.yaml
           git checkout -- lib/
           git checkout -- android/app/src/main/AndroidManifest.xml
           git checkout -- android/app/src/main/kotlin/com/example/factory_shift/MainActivity.kt
-          git checkout -- android/app/build.gradle
+          
+      - name: Fix Gradle Desugaring Automatically
+        run: |
+          sed -i 's/compileOptions {/compileOptions {\n        coreLibraryDesugaringEnabled true/' android/app/build.gradle
+          sed -i 's/dependencies {/dependencies {\n    coreLibraryDesugaring "com.android.tools:desugar_jdk_libs:2.0.4"/' android/app/build.gradle
+          
       - name: Build APK
         run: flutter build apk --release
+        
       - uses: actions/upload-artifact@v4
         with:
           name: app-release
