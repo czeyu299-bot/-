@@ -17,8 +17,16 @@ jobs:
         with:
           flutter-version: '3.24.0'
           channel: 'stable'
-      - run: flutter pub get
-      - run: flutter build apk --release
+      - name: Create Flutter Skeleton
+        run: flutter create --org com.example --project-name factory_shift .
+      - name: Restore Custom Files
+        run: |
+          git checkout -- pubspec.yaml
+          git checkout -- lib/
+          git checkout -- android/app/src/main/AndroidManifest.xml
+          git checkout -- android/app/src/main/kotlin/com/example/factory_shift/MainActivity.kt
+      - name: Build APK
+        run: flutter build apk --release
       - uses: actions/upload-artifact@v4
         with:
           name: app-release
