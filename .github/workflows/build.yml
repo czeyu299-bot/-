@@ -1,134 +1,43 @@
 name: Build APK
+
 on:
-  workflow_dispatch:
   push:
+    branches: [ main ]
+  pull_request:
     branches: [ main ]
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Java 17
+        uses: actions/setup-java@v4
         with:
-          distribution: 'zulu'
           java-version: '17'
-      - uses: subosito/flutter-action@v2
+          distribution: 'temurin'
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.24.0'
-          channel: 'stable'
+          channel: stable
 
-      - name: Generate Clean Android Skeleton
+      - name: Flutter environment check
+        run: flutter doctor
+
+      - name: Install dependencies
         run: |
-          flutter create --org com.example --project-name factory_shift temp_build
-          rm -rf android
-          mkdir android
-          cp -r temp_build/android/. android/
-          rm -rf temp_build
+          flutter clean
+          flutter pub get
 
-      - name: Inject Permissions and Native Code
-        run: |
-          cat << 'EOF' > android/app/src/main/AndroidManifest.xml
-          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-              <uses-permission android:name="android.permission.INTERNET" />
-              <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-              <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
-              <uses-permission android:name="android.permission.USE_EXACT_ALARM" />
-              <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
-              <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-              <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-              <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
-              <application android:label="排班表" android:name="${applicationName}" android:icon="@mipmap/ic_launcher">
-                  <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTop" android:theme="@style/LaunchTheme" android:configChanges="orientation|keyboardHidden|keyboard|screenSize|smallestScreenSize|locale|layoutDirection|fontScale|screenLayout|density|uiMode" android:hardwareAccelerated="true" android:windowSoftInputMode="adjustResize">
-                      <meta-data android:name="io.flutter.embedding.android.NormalTheme" android:resource="@style/NormalTheme" />
-                      <intent-filter>
-                          <action android:name="android.intent.action.MAIN"/>
-                          <category android:name="android.intent.category.LAUNCHER"/>
-                      </intent-filter>
-                  </activity>
-                  <receiver android:exported="false" android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver" />
-                  <receiver android:exported="false" android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationBootReceiver">
-                      <intent-filter>
-                          <action android:name="android.intent.action.BOOT_COMPLETED"/>
-                          <action android:name="android.intent.action.MY_PACKAGE_REPLACED"/>
-                          <action android:name="android.intent.action.QUICKBOOT_POWERON"/>
-                          <action android:name="com.htc.intent.action.QUICKBOOT_POWERON"/>
-                      </intent-filter>
-                  </receiver>
-                  <meta-data android:name="flutterEmbedding" android:value="2" />
-              </application>
-              <queries>
-                  <intent>
-                      <action android:name="android.intent.action.PROCESS_TEXT"/>
-                      <data android:mimeType="text/plain"/>
-                  </intent>
-              </queries>
-          </manifest>
-          EOF
-
-          cat << 'EOF' > android/app/src/main/kotlin/com/example/factory_shift/MainActivity.kt
-          package com.example.factory_shift
-
-          import android.app.NotificationManager
-          import android.content.Context
-          import android.content.Intent
-          import android.os.Build
-          import android.provider.Settings
-          import io.flutter.embedding.android.FlutterActivity
-          import io.flutter.embedding.engine.FlutterEngine
-          import io.flutter.plugin.common.MethodChannel
-
-          class MainActivity : FlutterActivity() {
-              private val channel = "factory_shift/dnd"
-
-              override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
-                  super.configureFlutterEngine(flutterEngine)
-                  MethodChannel(flutterEngine.dartExecutor.binaryMessenger, channel)
-                      .setMethodCallHandler { call, result ->
-                          val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-                          when (call.method) {
-                              "hasPermission" -> {
-                                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                                      result.success(nm.isNotificationPolicyAccessGranted)
-                                  } else result.success(false)
-                              }
-                              "openSettings" -> {
-                                  val intent = Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)
-                                  startActivity(intent)
-                                  result.success(true)
-                              }
-                              "setDnd" -> {
-                                  if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-                                      if (!nm.isNotificationPolicyAccessGranted) {
-                                          result.error("NO_PERM", "缺少勿扰权限", null)
-                                      } else {
-                                          val on = call.argument<Boolean>("on") ?: false
-                                          nm.setInterruptionFilter(
-                                              if (on) NotificationManager.INTERRUPTION_FILTER_PRIORITY
-                                              else NotificationManager.INTERRUPTION_FILTER_ALL
-                                          )
-                                          result.success(true)
-                                      }
-                                  } else result.error("UNSUPPORTED", "系统版本过低", null)
-                              }
-                              else -> result.notImplemented()
-                          }
-                      }
-              }
-          }
-          EOF
-
-      - name: Patch Gradle Config
-        run: |
-          sed -i 's/compileSdkVersion flutter.compileSdkVersion/compileSdkVersion 35/' android/app/build.gradle
-          sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 23/' android/app/build.gradle
-          sed -i 's/compileOptions {/compileOptions {\n        coreLibraryDesugaringEnabled true/' android/app/build.gradle
-          sed -i 's/dependencies {/dependencies {\n    coreLibraryDesugaring "com.android.tools:desugar_jdk_libs:2.0.4"/' android/app/build.gradle
-
-      - name: Build APK
+      - name: Build Release APK
         run: flutter build apk --release
 
-      - uses: actions/upload-artifact@v4
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
         with:
-          name: app-release
+          name: app-release-apk
           path: build/app/outputs/flutter-apk/app-release.apk
