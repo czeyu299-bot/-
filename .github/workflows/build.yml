@@ -1,3 +1,4 @@
+yaml
 name: Build APK
 on:
   workflow_dispatch:
@@ -28,16 +29,74 @@ jobs:
           git checkout -- android/app/src/main/AndroidManifest.xml
           git checkout -- android/app/src/main/kotlin/com/example/factory_shift/MainActivity.kt
 
-      - name: Fix Gradle Config
+      - name: Overwrite build.gradle
         run: |
-          # 强制提升 SDK 版本，解决 geolocator 插件的报错
-          sed -i 's/compileSdkVersion flutter.compileSdkVersion/compileSdkVersion 35/' android/app/build.gradle
-          sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 23/' android/app/build.gradle
-          sed -i 's/targetSdkVersion flutter.targetSdkVersion/targetSdkVersion 35/' android/app/build.gradle
-          
-          # 自动注入脱糖配置，解决 flutter_local_notifications 的报错
-          sed -i 's/compileOptions {/compileOptions {\n        coreLibraryDesugaringEnabled true/' android/app/build.gradle
-          sed -i 's/dependencies {/dependencies {\n    coreLibraryDesugaring "com.android.tools:desugar_jdk_libs:2.0.4"/' android/app/build.gradle
+          # 直接覆盖原文件，不搞 sed 替换了，最稳！
+          cat << 'EOF' > android/app/build.gradle
+          def localProperties = new Properties()
+          def localPropertiesFile = rootProject.file('local.properties')
+          if (localPropertiesFile.exists()) {
+              localPropertiesFile.withReader('UTF-8') { reader ->
+                  localProperties.load(reader)
+              }
+          }
+
+          def flutterRoot = localProperties.getProperty('flutter.sdk')
+          if (flutterRoot == null) {
+              throw new GradleException("Flutter SDK not found.")
+          }
+
+          def flutterVersionCode = localProperties.getProperty('flutter.versionCode')
+          if (flutterVersionCode == null) { flutterVersionCode = '1' }
+          def flutterVersionName = localProperties.getProperty('flutter.versionName')
+          if (flutterVersionName == null) { flutterVersionName = '1.0' }
+
+          apply plugin: 'com.android.application'
+          apply plugin: 'kotlin-android'
+          apply from: "$flutterRoot/packages/flutter_tools/gradle/flutter.gradle"
+
+          android {
+              namespace "com.example.factory_shift"
+              compileSdkVersion 35
+              ndkVersion flutter.ndkVersion
+
+              compileOptions {
+                  coreLibraryDesugaringEnabled true
+                  sourceCompatibility JavaVersion.VERSION_1_8
+                  targetCompatibility JavaVersion.VERSION_1_8
+              }
+
+              kotlinOptions {
+                  jvmTarget = '1.8'
+              }
+
+              sourceSets {
+                  main.java.srcDirs += 'src/main/kotlin'
+              }
+
+              defaultConfig {
+                  applicationId "com.example.factory_shift"
+                  minSdkVersion 23
+                  targetSdkVersion 35
+                  versionCode flutterVersionCode.toInteger()
+                  versionName flutterVersionName
+              }
+
+              buildTypes {
+                  release {
+                      signingConfig signingConfigs.debug
+                  }
+              }
+          }
+
+          flutter {
+              source '../..'
+          }
+
+          dependencies {
+              coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.0.4'
+          }
+          EOF
 
       - name: Build APK
         run: flutter build apk --release
