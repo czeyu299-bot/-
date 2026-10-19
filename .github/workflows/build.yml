@@ -28,7 +28,35 @@ jobs:
           git checkout -- android/app/src/main/AndroidManifest.xml
           git checkout -- android/app/src/main/kotlin/com/example/factory_shift/MainActivity.kt
 
-      - name: Overwrite build.gradle
+      - name: Fix Geolocator Plugin Bug
+        run: |
+          # 强行修改缓存的插件代码，解决找不到 compileSdkVersion 的问题
+          FIND_FILE=$(find ~/.pub-cache/hosted/pub.dev/ -path "*/geolocator_android/android/build.gradle" | head -n 1)
+          if [ -n "$FIND_FILE" ]; then
+            sed -i 's/compileSdkVersion flutter.compileSdkVersion/compileSdkVersion 35/' $FIND_FILE
+            sed -i 's/compileSdkVersion project.android.compileSdkVersion/compileSdkVersion 35/' $FIND_FILE
+            sed -i 's/targetSdkVersion flutter.targetSdkVersion/targetSdkVersion 35/' $FIND_FILE
+          fi
+
+      - name: Force Subprojects SDK
+        run: |
+          # 给所有子工程强制指定 SDK 版本，彻底解决底层报错
+          cat << 'EOF' >> android/build.gradle
+          subprojects {
+              afterEvaluate { project ->
+                  if (project.hasProperty('android')) {
+                      project.android {
+                          if (namespace == null) {
+                              namespace project.group
+                          }
+                          compileSdkVersion 35
+                      }
+                  }
+              }
+          }
+          EOF
+
+      - name: Overwrite App build.gradle
         run: |
           cat << 'EOF' > android/app/build.gradle
           def localProperties = new Properties()
@@ -38,40 +66,26 @@ jobs:
                   localProperties.load(reader)
               }
           }
-
           def flutterRoot = localProperties.getProperty('flutter.sdk')
-          if (flutterRoot == null) {
-              throw new GradleException("Flutter SDK not found.")
-          }
-
+          if (flutterRoot == null) { throw new GradleException("Flutter SDK not found.") }
           def flutterVersionCode = localProperties.getProperty('flutter.versionCode')
           if (flutterVersionCode == null) { flutterVersionCode = '1' }
           def flutterVersionName = localProperties.getProperty('flutter.versionName')
           if (flutterVersionName == null) { flutterVersionName = '1.0' }
-
           apply plugin: 'com.android.application'
           apply plugin: 'kotlin-android'
           apply from: "$flutterRoot/packages/flutter_tools/gradle/flutter.gradle"
-
           android {
               namespace "com.example.factory_shift"
               compileSdkVersion 35
               ndkVersion flutter.ndkVersion
-
               compileOptions {
                   coreLibraryDesugaringEnabled true
                   sourceCompatibility JavaVersion.VERSION_1_8
                   targetCompatibility JavaVersion.VERSION_1_8
               }
-
-              kotlinOptions {
-                  jvmTarget = '1.8'
-              }
-
-              sourceSets {
-                  main.java.srcDirs += 'src/main/kotlin'
-              }
-
+              kotlinOptions { jvmTarget = '1.8' }
+              sourceSets { main.java.srcDirs += 'src/main/kotlin' }
               defaultConfig {
                   applicationId "com.example.factory_shift"
                   minSdkVersion 23
@@ -79,18 +93,11 @@ jobs:
                   versionCode flutterVersionCode.toInteger()
                   versionName flutterVersionName
               }
-
               buildTypes {
-                  release {
-                      signingConfig signingConfigs.debug
-                  }
+                  release { signingConfig signingConfigs.debug }
               }
           }
-
-          flutter {
-              source '../..'
-          }
-
+          flutter { source '../..' }
           dependencies {
               coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.0.4'
           }
