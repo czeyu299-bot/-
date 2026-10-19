@@ -20,16 +20,14 @@ jobs:
 
       - name: Generate Clean Android Skeleton
         run: |
-          # 把项目挪到临时文件夹，生成纯净的工程后再替换回来
-          cd ..
           flutter create --org com.example --project-name factory_shift temp_build
-          rm -rf factory_shift/android
-          cp -r temp_build/android factory_shift/android
-          cd factory_shift
+          rm -rf android
+          mkdir android
+          cp -r temp_build/android/. android/
+          rm -rf temp_build
 
       - name: Inject Permissions and Native Code
         run: |
-          # 写入必要的权限配置
           cat << 'EOF' > android/app/src/main/AndroidManifest.xml
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
               <uses-permission android:name="android.permission.INTERNET" />
@@ -68,7 +66,6 @@ jobs:
           </manifest>
           EOF
 
-          # 写入免打扰原生代码
           cat << 'EOF' > android/app/src/main/kotlin/com/example/factory_shift/MainActivity.kt
           package com.example.factory_shift
 
@@ -123,7 +120,6 @@ jobs:
 
       - name: Patch Gradle Config
         run: |
-          # 针对官方纯净版 build.gradle 进行智能注入
           sed -i 's/compileSdkVersion flutter.compileSdkVersion/compileSdkVersion 35/' android/app/build.gradle
           sed -i 's/minSdkVersion flutter.minSdkVersion/minSdkVersion 23/' android/app/build.gradle
           sed -i 's/compileOptions {/compileOptions {\n        coreLibraryDesugaringEnabled true/' android/app/build.gradle
