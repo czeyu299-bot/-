@@ -25,6 +25,7 @@ jobs:
           git checkout -- lib/
           git checkout -- android/app/src/main/AndroidManifest.xml
           git checkout -- android/app/src/main/kotlin/com/example/factory_shift/MainActivity.kt
+          git checkout -- android/app/build.gradle
       - name: Build APK
         run: flutter build apk --release
       - uses: actions/upload-artifact@v4
